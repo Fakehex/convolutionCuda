@@ -26,7 +26,6 @@ __global__ void grayscale( unsigned char * rgb, unsigned char * g, std::size_t c
 }
 
 __global__ void convolution_global_memory_gray(unsigned char *N,float *M,unsigned char* g,std::size_t cols, std::size_t rows,std::size_t mask_size){
-  //magical numbers
   int paddingSize = ( mask_size-1 )/2;
   unsigned int paddedH = cols + 2 * paddingSize;
   unsigned int paddedW = rows + 2 * paddingSize;
@@ -45,7 +44,7 @@ __global__ void convolution_global_memory_gray(unsigned char *N,float *M,unsigne
     }
   }
 }
-
+//filtre
 static void simple_blur(std::vector< float >  &M_h, int mask_size){
   for(int i = 0; i< mask_size; i++){
     for(int j = 0; j< mask_size; j++){
@@ -53,6 +52,7 @@ static void simple_blur(std::vector< float >  &M_h, int mask_size){
     }
   }
 }
+//filtre de mask_size=3 attention dans le main a son utilisation
 static void left_sobel_maskSize3(std::vector< float >  &M_h){
   unsigned int mask_size = 3;
   for(int i = 0; i< mask_size; i++){
@@ -87,6 +87,8 @@ int main()
   auto rgb = m_in.data;
   auto rows = m_in.rows;
   auto cols = m_in.cols;
+  //g sortie du grayscale
+  //g resultat de la convolution
   std::vector< unsigned char > g( rows * cols );
   std::vector< unsigned char > g2( rows * cols );
   unsigned char * rgb_d;
@@ -94,22 +96,25 @@ int main()
   unsigned char * g2_d;
   unsigned char * out_d;
 
-  //convolution
+
   unsigned int mask_size = 9;
+  //M_h est notre filtre sur le host
   std::vector< float > M_h( mask_size * mask_size * sizeof(float) );
   //simple blur
   simple_blur(M_h,mask_size);
   //left_Sobel seulement avec mask 3
   //left_sobel_maskSize3(M_h);
 
-
+  // PaddingSize est l'ecart suplementaire qu'il faut avoir sur chaque bord de l'image
+  //PaddedW -> largeur de l'image avec padding
+  //PaddedH -> longeur de l'image avec padding
+  //data_pad -> notre image avec padding sur host
   std::size_t paddingSize = (mask_size-1)/2;
   std::size_t paddedW = rows + 2 * paddingSize;
   std::size_t paddedH = cols + 2 * paddingSize;
   std::vector< unsigned char > data_pad( paddedH * paddedW );
 
-
-  //fin
+  // GRAYSACLE DEBUT
   HANDLE_ERROR(cudaMalloc( &rgb_d, 3 * rows * cols ));
   HANDLE_ERROR(cudaMalloc( &g_d, rows * cols ));
   HANDLE_ERROR(cudaMalloc( &g2_d, rows * cols ));
@@ -118,19 +123,12 @@ int main()
   dim3 t( 32, 32 );
   dim3 b( ( cols - 1) / t.x + 1 , ( rows - 1 ) / t.y + 1 );
 
-
-
   grayscale<<< b, t >>>( rgb_d, g_d, cols, rows );
 
-  //sobel<<< b, t >>>( g_d, out_d, cols, rows );
+  HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols, cudaMemcpyDeviceToHost ))
+  //GRAYSCALE FIN -> g est notre image grise
 
-
-  HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols, cudaMemcpyDeviceToHost ));
-  //cv::imwrite( "out.jpg", m_out );
-
-
-
-
+  //creation de l'image avec le padding dans data_pad
   for(int i=0; i < paddedW ; i++){
     for(int j=0; j < paddedH ; j++){
       if((i<=paddingSize && j<=paddingSize)|| (i>=paddedW-paddingSize & j>=paddedH-paddingSize)){
@@ -142,31 +140,27 @@ int main()
   }
   float * M_d;
   unsigned char * data_d;
+  // On alloue de la place pour le filtre et notre image avec padding
   HANDLE_ERROR(cudaMalloc( &M_d, mask_size * mask_size * sizeof(float)));
   HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW ));
 
-
+  //On copie du cpu vers gpu image et filtre
   HANDLE_ERROR(cudaMemcpy(data_d, data_pad.data(), paddedW * paddedH, cudaMemcpyHostToDevice ));
   HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
 
-  dim3 t2( 32, 32 );
   dim3 b2( ( paddedH - 1) / t.x + 1 , ( paddedW - 1 ) / t.y + 1 );
 
+  //On execute le kernel
   convolution_global_memory_gray<<< b2, t2 >>>( data_d,M_d, g2_d, cols, rows,mask_size );
 
-
+  //copie le résultat du Gpu sur cpu
   HANDLE_ERROR(cudaMemcpy( g2.data(), g2_d, rows * cols, cudaMemcpyDeviceToHost ));
 
   cv::Mat m_out( rows, cols, CV_8UC1, g2.data() );
   cv::imwrite( "out.jpg", m_out );
 
   cudaDeviceSynchronize();
-/*  auto err = cudaGetLastError();
-  if( err != cudaSuccess )
-  {
-    std::cout << cudaGetErrorString( err );
-  }
-  /*/
+
   cudaFree( rgb_d);
   cudaFree( g_d);
   return 0;
