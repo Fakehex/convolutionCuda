@@ -19,20 +19,22 @@ __global__ void convolution_rgb(unsigned char *N,float *M,unsigned char* g,std::
   unsigned int paddedH = cols + 2 * paddingSize;
   unsigned int paddedW = rows*3 + 2 * paddingSize;
 
-  int i = blockIdx.x * blockDim.x + threadIdx.x + paddingSize;
+  int i = blockIdx.x * blockDim.x + threadIdx.x + paddingSize ;
   int j = blockIdx.y * blockDim.y + threadIdx.y + paddingSize;
+  if( (i >= paddingSize) && (i < paddedW-paddingSize) && (j >= paddingSize) && (j<paddedH-paddingSize)) {
+    unsigned int oPixelPos = (i - paddingSize ) * cols + (j -paddingSize);
+    g[oPixelPos] = 0;
+    int iterationL = 0;
+    int iterationK = 0;
+    for(int k = -paddingSize; k <= paddingSize; k=k+3){
+      for(int l = -paddingSize; l<=paddingSize; l=l+3){
+        unsigned int iPixelPos = (i+k)*paddedH+(j+l);
+        unsigned int filtrePos = iterationL*mask_size + iterationK;
 
-  if( (j >= paddingSize) && (j < paddedW-paddingSize) && (i >= paddingSize) && (i<paddedH-paddingSize)) {
-    unsigned int oPixelPos = (j - paddingSize ) * rows + (i -paddingSize);
-    g[oPixelPos] = N[oPixelPos];
-    for(int k = -paddingSize; k <= paddingSize; k++){
-      for(int l = -paddingSize; l<=paddingSize; l++){
-        unsigned int iPixelPos = (j+l)*paddedW+(i+k);
-        unsigned int filtrePos = (k + paddingSize) * mask_size + (l+ paddingSize);
-
-          //g[oPixelPos] += N[iPixelPos] * M[filtrePos];
-
+        g[oPixelPos] += N[iPixelPos] * M[filtrePos];
+        iterationL++;
       }
+      iterationK++;
     }
   }
 }
@@ -44,7 +46,34 @@ static void simple_blur_rgb(std::vector< float >  &M_h, int mask_size){
     }
   }
 }
+//filtre de mask_size=3 attention dans le main a son utilisation
+static void left_sobel_maskSize3(std::vector< float >  &M_h){
+  unsigned int mask_size = 3;
+  for(int i = 0; i< mask_size; i++){
+    for(int j = 0; j< mask_size; j++){
+      if(i==1){
+        M_h[i+j*mask_size] = 0;
+      }else{
+        if(i==0){
+          if(j==1){
+            M_h[i+j*mask_size] = 2;
+          }else{
+            M_h[i+j*mask_size] = 1;
+          }
+        }
+        if(i==2){
+          if(j==1){
+            M_h[i+j*mask_size] = -2.0;
+          }else{
+            M_h[i+j*mask_size] = -1.0;
 
+          }
+        }
+
+      }
+    }
+  }
+}
 int main()
 {
 
@@ -52,31 +81,24 @@ int main()
   auto rgb = m_in.data;
   auto rows = m_in.rows;
   auto cols = m_in.cols;
-  std::vector< unsigned char > g( rows * cols * 3);
-  unsigned char * g_d;
 
   //init convolution, creation filtre et image avec padding
   unsigned int mask_size = 3;
   std::vector< float > M_h( mask_size * mask_size * sizeof(float) );
   //simple blur
-  simple_blur_rgb(M_h,mask_size);
+  //simple_blur_rgb(M_h,mask_size);
+  left_sobel_maskSize3(M_h);
 
   std::size_t paddingSize = ((mask_size-1)/2) * 3;
   std::size_t paddedW = rows + 2 * paddingSize;
   std::size_t paddedH = cols + 2 * paddingSize;
-  std::vector< unsigned char > data_pad( paddedH * paddedW * 3 );
+  //std::vector< unsigned char > data_pad( paddedH * paddedW * 3 );
+  std::vector< unsigned char > g( rows * cols * 3);
+  copyMakeBorder(m_in,m_in,paddingSize,paddingSize,paddingSize,paddingSize,cv::BORDER_CONSTANT,0);
+  auto data_pad = m_in.data;
+  unsigned char * g_d;
 
-  // on crée l'image avec le padding
-  // a améliorer plus tard, 2 bande noir sur l'image,
-  for(int i=0; i < paddedW*3 ; i++){
-    for(int j=0; j < paddedH ; j++){
-        if((i<=paddingSize && j<=paddingSize)|| (i>=paddedW-paddingSize & j>=paddedH-paddingSize) || (i>rows*3) || j >cols){
-          data_pad[i*paddedH+j] = 0;
-        }else{
-          data_pad[i*paddedH+j] = rgb[i*cols+j];
-        }
-    }
-  }
+
 
   //fin init convolution
 
@@ -88,11 +110,11 @@ int main()
   HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
 
 
-  HANDLE_ERROR(cudaMemcpy(data_d, data_pad.data(), paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
+  HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
   HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),3* mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
 
   dim3 t( 32, 32 );
-  dim3 b( ( cols - 1) / t.x + 1 , ( rows*3 - 1 ) / t.y + 1 );
+  dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
   convolution_rgb<<< b, t >>>( data_d,M_d, g_d, cols, rows,mask_size );
 
 
