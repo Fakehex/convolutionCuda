@@ -24,12 +24,12 @@ __global__ void convolution_rgb(unsigned char *N,float *M,unsigned char* g,std::
   if( (i >= paddingSize) && (i < paddedW-paddingSize) && (j >= paddingSize) && (j<paddedH-paddingSize)) {
     unsigned int oPixelPos = (i - paddingSize ) * cols + (j -paddingSize);
     g[oPixelPos] = 0;
-    int iterationL = 0;
     int iterationK = 0;
     for(int k = -paddingSize; k <= paddingSize; k=k+3){
+      int iterationL = 0;
       for(int l = -paddingSize; l<=paddingSize; l=l+3){
         unsigned int iPixelPos = (i+k)*paddedH+(j+l);
-        unsigned int filtrePos = iterationL*mask_size + iterationK;
+        unsigned int filtrePos = iterationK*mask_size + iterationL;
 
         g[oPixelPos] += N[iPixelPos] * M[filtrePos];
         iterationL++;
@@ -41,7 +41,7 @@ __global__ void convolution_rgb(unsigned char *N,float *M,unsigned char* g,std::
 
 static void simple_blur_rgb(std::vector< float >  &M_h, int mask_size){
   for(int i = 0; i< mask_size; i++){
-    for(int j = 0; j< mask_size*3; j++){ // on multiplie par 3 pour avoir un filtre coherent avec le rgb
+    for(int j = 0; j< mask_size; j++){ // on multiplie par 3 pour avoir un filtre coherent avec le rgb
       M_h[i+j*mask_size] = 1.0/(mask_size*mask_size);
     }
   }
@@ -78,24 +78,64 @@ int main()
 {
 
   cv::Mat m_in = cv::imread("in.jpg", cv::IMREAD_UNCHANGED );
-  auto rgb = m_in.data;
+  //auto rgb = m_in.data;
   auto rows = m_in.rows;
   auto cols = m_in.cols;
 
   //init convolution, creation filtre et image avec padding
   unsigned int mask_size = 3;
-  std::vector< float > M_h( mask_size * mask_size * sizeof(float) );
-  //simple blur
-  //simple_blur_rgb(M_h,mask_size);
-  left_sobel_maskSize3(M_h);
 
-  std::size_t paddingSize = ((mask_size-1)/2) * 3;
-  std::size_t paddedW = rows + 2 * paddingSize;
-  std::size_t paddedH = cols + 2 * paddingSize;
+  //DEMANDE DE FILTRE
+  int ask = 0;
+  while(ask!=1 || ask!=2){
+
+    std::cout << "Quel filtre voulez vous utiliser ? (1 ou 2)" << std::endl;
+    std::cout << "1. simple blur" << std::endl;
+    std::cout << "2. left sobel (avec la taille du masque = 3)" << std::endl;
+    std::cin >> ask;
+    if(std::cin.fail()){
+      std::cout << "ERREUR" << std::endl;
+      std::cin.clear();
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      ask = 0;
+    }
+    if(ask==1){
+      std::cout << "quel taille du masque ? (3,5,9 conseillé)" << std::endl;
+      std::cin >> mask_size;
+      if(std::cin.fail()){
+        std::cout << "ERREUR" << std::endl;
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        ask = 0;
+        mask_size = 3;
+      }
+      break;
+    }else{
+      if(ask==2){
+        break;
+      }else{
+        std::cout << "Erreur, Reessayez " << std::endl;
+      }
+    }
+
+  }
+  std::vector< float > M_h( mask_size * mask_size * sizeof(float) );
+  if(ask==1){
+    simple_blur_rgb(M_h,mask_size);
+  }else{
+    left_sobel_maskSize3(M_h);
+  }
+
+
+  std::size_t paddingSize = ((mask_size-1)/2)*3;
+  std::size_t paddedW = 0;
+  std::size_t paddedH = 0;
   //std::vector< unsigned char > data_pad( paddedH * paddedW * 3 );
   std::vector< unsigned char > g( rows * cols * 3);
   copyMakeBorder(m_in,m_in,paddingSize,paddingSize,paddingSize,paddingSize,cv::BORDER_CONSTANT,0);
   auto data_pad = m_in.data;
+  paddedW = m_in.rows;
+  paddedH = m_in.cols;
   unsigned char * g_d;
 
 
@@ -106,17 +146,34 @@ int main()
 
   float * M_d;
   unsigned char * data_d;
-  HANDLE_ERROR(cudaMalloc( &M_d,3 * mask_size * mask_size * sizeof(float)));
+  HANDLE_ERROR(cudaMalloc( &M_d, mask_size * mask_size * sizeof(float)));
   HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
 
 
   HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
-  HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),3* mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
+  HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
 
   dim3 t( 32, 32 );
   dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
+
+  //Bench
+  cudaEvent_t start, stop;
+  cudaEventCreate( &start );
+  cudaEventCreate( &stop );
+
+  cudaEventRecord( start );
+
   convolution_rgb<<< b, t >>>( data_d,M_d, g_d, cols, rows,mask_size );
 
+  cudaEventRecord( stop );
+
+  cudaEventSynchronize( stop );
+
+  float elapsedTime;
+  cudaEventElapsedTime( & elapsedTime, start, stop );
+  std::cout <<"Executé en : "<< elapsedTime <<"ms" << std::endl;
+  cudaEventDestroy( start );
+  cudaEventDestroy( stop );
 
   HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols * 3, cudaMemcpyDeviceToHost ));
 
