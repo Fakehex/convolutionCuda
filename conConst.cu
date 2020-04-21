@@ -2,6 +2,10 @@
 #include <vector>
 #include <omp.h>
 
+
+const unsigned int MaxFiltreSize = 79;
+__device__ __constant__ float filtre_d[MaxFiltreSize * MaxFiltreSize];
+
 static void HandleError( cudaError_t err,
                          const char *file,
                          int line ) {
@@ -13,7 +17,7 @@ static void HandleError( cudaError_t err,
 }
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
-__global__ void convolution_rgb(unsigned char *N,unsigned char* g,std::size_t cols, std::size_t rows,std::size_t mask_size){
+__global__ void convolution_rgb(unsigned char *paddedImage, unsigned char* g,std::size_t cols, std::size_t rows,std::size_t mask_size){
 
   int paddingSize = (( mask_size-1 )/2)*3;
   unsigned int paddedH = cols + 2 * paddingSize;
@@ -24,14 +28,14 @@ __global__ void convolution_rgb(unsigned char *N,unsigned char* g,std::size_t co
   if( (i >= paddingSize) && (i < paddedW-paddingSize) && (j >= paddingSize) && (j<paddedH-paddingSize)) {
     unsigned int oPixelPos = (i - paddingSize ) * cols + (j -paddingSize);
     g[oPixelPos] = 0;
-    int iterationK = 0;
+    unsigned int iterationK = 0;
     for(int k = -paddingSize; k <= paddingSize; k=k+3){
-      int iterationL = 0;
+      unsigned int iterationL = 0;
       for(int l = -paddingSize; l<=paddingSize; l=l+3){
         unsigned int iPixelPos = (i+k)*paddedH+(j+l);
         unsigned int filtrePos = iterationK*mask_size + iterationL;
 
-        g[oPixelPos] += N[iPixelPos] * filtre_d[filtrePos];
+        g[oPixelPos] += paddedImage[iPixelPos] * filtre_d[filtrePos];
         iterationL++;
       }
       iterationK++;
@@ -138,9 +142,7 @@ int main()
   //fin init convolution
 
   HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
-  
-  const unsigned int MaxFiltreSize = 60;
-  __device__ __constant__ float filtre_d[MaxFiltreSize * MaxFiltreSize];
+
   unsigned char * data_d;
   unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
   HANDLE_ERROR(cudaMemcpyToSymbol(filtre_d, filtre_h.data(),filterSizeByte,0,cudaMemcpyHostToDevice));

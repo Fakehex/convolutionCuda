@@ -9,7 +9,7 @@ conRgb: conRgb.cu
 	nvcc -o $@ $< $(LDLIBS)
 
 conConst: conConst.cu
-	nvcc -dc -o $@ $< $(LDLIBS)
+	nvcc -o $@ $< $(LDLIBS)
 .PHONY: clean
 
 clean:
