@@ -10,6 +10,10 @@ conRgb: conRgb.cu
 
 conConst: conConst.cu
 	nvcc -o $@ $< $(LDLIBS)
+
+conStream: conStream.cu
+	nvcc -o $@ $< $(LDLIBS)
+
 .PHONY: clean
 
 clean:

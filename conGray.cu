@@ -125,7 +125,7 @@ int main()
 
   grayscale<<< b, t >>>( rgb_d, g_d, cols, rows );
 
-  HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols, cudaMemcpyDeviceToHost ))
+  HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols, cudaMemcpyDeviceToHost ));
   //GRAYSCALE FIN -> g est notre image grise
 
   //creation de l'image avec le padding dans data_pad
@@ -148,10 +148,11 @@ int main()
   HANDLE_ERROR(cudaMemcpy(data_d, data_pad.data(), paddedW * paddedH, cudaMemcpyHostToDevice ));
   HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
 
+
   dim3 b2( ( paddedH - 1) / t.x + 1 , ( paddedW - 1 ) / t.y + 1 );
 
   //On execute le kernel
-  convolution_global_memory_gray<<< b2, t2 >>>( data_d,M_d, g2_d, cols, rows,mask_size );
+  convolution_global_memory_gray<<< b2, t >>>( data_d,M_d, g2_d, cols, rows,mask_size );
 
   //copie le résultat du Gpu sur cpu
   HANDLE_ERROR(cudaMemcpy( g2.data(), g2_d, rows * cols, cudaMemcpyDeviceToHost ));
