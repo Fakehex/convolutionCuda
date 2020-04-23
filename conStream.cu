@@ -140,12 +140,15 @@ int main()
   unsigned char * g_d;
 
   //fin init convolution
+  unsigned char * data_d1; //premiere moitié des données de l'image
+  unsigned char * data_d2; // deuxieme moitié
+  unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
+
+  dim3 t( 32, 32 );
+  dim3 b( ( rows/2*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
   HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
 
-  unsigned char * data_d1;
-  unsigned char * data_d2;
-  unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
   HANDLE_ERROR(cudaMemcpyToSymbol(filtre_d, filtre_h.data(),filterSizeByte,0,cudaMemcpyHostToDevice));
   HANDLE_ERROR(cudaMalloc( &data_d1, paddedH * paddedW/2 * 3 + paddingSize*paddedH));
   HANDLE_ERROR(cudaMalloc( &data_d2, paddedH * paddedW/2 * 3 + paddingSize*paddedH));
@@ -160,10 +163,6 @@ int main()
 
   cudaMemcpyAsync( data_d1 , data_pad, (paddedW * paddedH * 3)/2+paddingSize*paddedH, cudaMemcpyHostToDevice, streams[ 0 ] );
   cudaMemcpyAsync( data_d2, data_pad + (paddedW/2*paddedH*3)-paddingSize*paddedH, (paddedW * paddedH * 3)/2+paddingSize*paddedH, cudaMemcpyHostToDevice, streams[ 1 ] );
-
-
-  dim3 t( 32, 32 );
-  dim3 b( ( rows/2*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
   convolution_rgb<<< b, t,0, streams[0]>>>( data_d1 , g_d, cols, rows,mask_size );
   convolution_rgb<<< b, t,0, streams[1]>>>( data_d2 , g_d+(rows/2*cols*3), cols, rows,mask_size );

@@ -136,16 +136,13 @@ int main()
   auto data_pad = m_in.data;
   paddedW = m_in.rows;
   paddedH = m_in.cols;
-  unsigned char * g_d;
-
-
-
   //fin init convolution
 
-  HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
 
+  unsigned char * g_d;
   float * M_d;
   unsigned char * data_d;
+  HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
   HANDLE_ERROR(cudaMalloc( &M_d, mask_size * mask_size * sizeof(float)));
   HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
 
@@ -156,24 +153,8 @@ int main()
   dim3 t( 32, 32 );
   dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
-  //Bench
-  cudaEvent_t start, stop;
-  cudaEventCreate( &start );
-  cudaEventCreate( &stop );
-
-  cudaEventRecord( start );
-
   convolution_rgb<<< b, t >>>( data_d,M_d, g_d, cols, rows,mask_size );
 
-  cudaEventRecord( stop );
-
-  cudaEventSynchronize( stop );
-
-  float elapsedTime;
-  cudaEventElapsedTime( & elapsedTime, start, stop );
-  std::cout <<"Executé en : "<< elapsedTime <<"ms" << std::endl;
-  cudaEventDestroy( start );
-  cudaEventDestroy( stop );
 
   HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols * 3, cudaMemcpyDeviceToHost ));
 
@@ -188,5 +169,8 @@ int main()
   }
 
   cudaFree( g_d);
+  cudaFree( data_d);
+  cudaFree( M_d);
+
   return 0;
 }

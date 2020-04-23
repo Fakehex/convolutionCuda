@@ -139,40 +139,24 @@ int main()
   std::size_t paddedH = m_in.cols;
   unsigned char * g_d;
 
+
   //fin init convolution
-
-  HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
-
   unsigned char * data_d;
   unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
-  HANDLE_ERROR(cudaMemcpyToSymbol(filtre_d, filtre_h.data(),filterSizeByte,0,cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
-
-  HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
 
   dim3 t( 32, 32 );
   dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
-  //Bench
-  cudaEvent_t start, stop;
-  cudaEventCreate( &start );
-  cudaEventCreate( &stop );
+  HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
+  HANDLE_ERROR(cudaMemcpyToSymbol(filtre_d, filtre_h.data(),filterSizeByte,0,cudaMemcpyHostToDevice));
+  HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
+  HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
 
-  cudaEventRecord( start );
 
   convolution_rgb<<< b, t>>>( data_d, g_d, cols, rows,mask_size );
-
-  cudaEventRecord( stop );
-
-  cudaEventSynchronize( stop );
-
-  float elapsedTime;
-  cudaEventElapsedTime( & elapsedTime, start, stop );
-  std::cout <<"Executé en : "<< elapsedTime <<"ms" << std::endl;
-  cudaEventDestroy( start );
-  cudaEventDestroy( stop );
-
+  
   HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols * 3, cudaMemcpyDeviceToHost ));
+
 
   cv::Mat m_out( rows, cols, CV_8UC3, g.data() );
   cv::imwrite( "out.jpg", m_out );
