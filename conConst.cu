@@ -144,7 +144,7 @@ int main()
   unsigned char * data_d;
   unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
 
-  dim3 t( 32, 32 );
+  dim3 t( 8, 8 );
   dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
   HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
@@ -154,7 +154,7 @@ int main()
 
 
   convolution_rgb<<< b, t>>>( data_d, g_d, cols, rows,mask_size );
-  
+
   HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols * 3, cudaMemcpyDeviceToHost ));
 
 
@@ -169,5 +169,8 @@ int main()
   }
 
   cudaFree( g_d);
+  cudaFree(data_d);
+  cudaFree(filtre_d);
+
   return 0;
 }

@@ -14,6 +14,9 @@ conConst: conConst.cu
 conStream: conStream.cu
 	nvcc -o $@ $< $(LDLIBS)
 
+conShared: conShared.cu
+	nvcc -o $@ $< $(LDLIBS)
+
 .PHONY: clean
 
 clean:

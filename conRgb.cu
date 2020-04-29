@@ -150,7 +150,7 @@ int main()
   HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
   HANDLE_ERROR(cudaMemcpy(M_d, M_h.data(),mask_size * mask_size*sizeof(float),cudaMemcpyHostToDevice));
 
-  dim3 t( 32, 32 );
+  dim3 t( 8, 8 );
   dim3 b( ( rows*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
 
   convolution_rgb<<< b, t >>>( data_d,M_d, g_d, cols, rows,mask_size );

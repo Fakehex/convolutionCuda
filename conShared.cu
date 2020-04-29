@@ -139,50 +139,39 @@ int main()
   std::size_t paddedH = m_in.cols;
   unsigned char * g_d;
 
+
   //fin init convolution
-  unsigned char * data_d1; //premiere moitié des données de l'image
-  unsigned char * data_d2; // deuxieme moitié
+  unsigned char * data_d;
   unsigned int filterSizeByte = mask_size * mask_size * sizeof(float);
 
-  dim3 t( 8, 8 );
-  dim3 b( ( rows/2*3 - 1) / t.x + 1 , ( cols - 1 ) / t.y + 1 );
+  dim3 block( 8, 8 );
+  dim3 grid( ( rows*3 - 1) / block.x + 1 , ( cols - 1 ) / block.y + 1 );
 
   HANDLE_ERROR(cudaMalloc( &g_d, rows * cols * 3));
-
+  HANDLE_ERROR(cudaMalloc( &data_d, paddedH * paddedW * 3));
   HANDLE_ERROR(cudaMemcpyToSymbol(filtre_d, filtre_h.data(),filterSizeByte,0,cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMalloc( &data_d1, paddedH * paddedW/2 * 3 + paddingSize*paddedH));
-  HANDLE_ERROR(cudaMalloc( &data_d2, paddedH * paddedW/2 * 3 + paddingSize*paddedH));
-
-  cudaStream_t streams[ 2 ];
-
-  for( std::size_t i = 0 ; i < 2 ; ++i )
-  {
-    cudaStreamCreate( &streams[ i ] );
-  }
+  HANDLE_ERROR(cudaMemcpy(data_d, data_pad, paddedW * paddedH * 3, cudaMemcpyHostToDevice ));
 
 
-  cudaMemcpyAsync( data_d1 , data_pad, (paddedW * paddedH * 3)/2+paddingSize*paddedH, cudaMemcpyHostToDevice, streams[ 0 ] );
-  cudaMemcpyAsync( data_d2, data_pad + (paddedW/2*paddedH*3)-paddingSize*paddedH, (paddedW * paddedH * 3)/2+paddingSize*paddedH, cudaMemcpyHostToDevice, streams[ 1 ] );
-
-  convolution_rgb<<< b, t,0, streams[0]>>>( data_d1 , g_d, cols, rows,mask_size );
-  convolution_rgb<<< b, t,0, streams[1]>>>( data_d2 , g_d+(rows/2*cols*3), cols, rows,mask_size );
-
+  convolution_rgb<<< grid, block>>>( data_d, g_d, cols, rows,mask_size );
 
   HANDLE_ERROR(cudaMemcpy( g.data(), g_d, rows * cols * 3, cudaMemcpyDeviceToHost ));
+
 
   cv::Mat m_out( rows, cols, CV_8UC3, g.data() );
   cv::imwrite( "out.jpg", m_out );
 
   cudaDeviceSynchronize();
+
   auto err = cudaGetLastError();
   if( err != cudaSuccess )
   {
     std::cout << cudaGetErrorString( err );
   }
 
-  cudaFree(data_d1);
-  cudaFree(data_d2);
-  cudaFree(filtre_d);
   cudaFree( g_d);
+  cudaFree(data_d);
+  cudaFree(filtre_d);
+
   return 0;
 }
